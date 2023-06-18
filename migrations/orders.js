@@ -21,6 +21,6 @@ module.exports = {
     },
   
     async down(db) {
-      await db.collection('users').drop();
+      await db.collection('orders').drop();
     },
   };
