@@ -1,0 +1,88 @@
+const mongoose = require('mongoose');
+const { ObjectId } = mongoose.Types;
+// Define the Order model
+const Order = mongoose.model('Order', new mongoose.Schema({
+    user_id: String,
+    products: [
+        {
+            product_id: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: 'Product'
+            },
+            quantity: Number
+        }
+    ],
+    total_amount: Number,
+    status: String,
+    created_at: Date
+}));
+
+const Product = mongoose.model('Product', new mongoose.Schema({
+    name: String,
+    description: String,
+    price: Number,
+    quantity: Number,
+}));
+
+
+
+const MONGODB_URI = 'mongodb://localhost:27017/shop?replicaSet=rs';
+
+mongoose.connect(MONGODB_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+});
+
+
+const db = mongoose.connection;
+db.on('error', console.error.bind(console, 'Connection error:'));
+db.once('open', () => {
+    console.log('Connected to the MongoDB database.');
+});
+
+
+async function createOrder(user_id, products, total_amount, status) {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    try {
+        //create order
+        const order = new Order({
+            user_id,
+            products,
+            total_amount,
+            status,
+            created_at: new Date()
+        });
+        const savedOrder = await order.save();
+        console.log('Order created successfully:', savedOrder);
+
+        //update products quantity
+        for (const product of order.products) {
+            const existingProduct = await Product.findById(new ObjectId(product.product_id)).session(session);
+            if (!existingProduct) {
+                throw new Error(`Product ${product.product_id} not found`);
+            }
+            if (existingProduct.quantity < product.quantity) {
+                throw new Error(`Insufficient stock for product ${product.product_id}`);
+            }
+            existingProduct.quantity -= product.quantity;
+            await existingProduct.save({ session });
+        }
+        await session.commitTransaction();
+        session.endSession();
+    } catch (error) {
+        console.error('Error creating order:', error.message);
+    } finally {
+        mongoose.disconnect();
+    }
+}
+
+createOrder(
+    'user_id',
+    [
+        { product_id: '648f478b8d0c5b5b4d9f876b', quantity: 2 },
+        { product_id: '648f478b8d0c5b5b4d9f876c', quantity: 1 }
+    ],
+    19.97,
+    'pending'
+);
